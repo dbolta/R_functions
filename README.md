@@ -7,3 +7,7 @@ Do not need to encapsulate package names in quotes.
 
 ### Multiple imputation with Ranger plus imputation of test set
 https://github.com/dbolta/R_functions/blob/master/Ranger_Imputer_with_Test_Set.ipynb
+
+### Fast calculation of min distance each of many points, x, from a set of data, centers.
+Combination of parApply and dplyr functions
+https://github.com/dbolta/R_functions/blob/master/min_dist_to_points.Rmd
