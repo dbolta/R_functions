@@ -10,4 +10,8 @@ https://github.com/dbolta/R_functions/blob/master/Ranger_Imputer_with_Test_Set.i
 
 ### Fast calculation of min distance each of many points, x, from a set of data, centers.
 Combination of parApply and dplyr functions
-https://github.com/dbolta/R_functions/blob/master/min_dist_to_points.Rmd
+<br>https://github.com/dbolta/R_functions/blob/master/min_dist_to_points.Rmd
+
+### Tidy eval gallery
+A growing collection of NSE examples
+https://github.com/dbolta/R_functions/blob/master/Tidy_eval_examples_1.Rmd
