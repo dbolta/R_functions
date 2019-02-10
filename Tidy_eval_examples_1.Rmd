@@ -1,0 +1,69 @@
+# Tidy eval and dplyr/tidyverse examples
+#### A growing gallery of tidy NSE
+```{r boilerplate}
+library(tidyverse)
+```
+### Compare multiple quosures
+```{r Sample Data}
+### These are not the same
+quos(B, C, D) %>% 
+  class()
+
+list(quo(A), quo(B), quo(C)) %>% 
+  class()
+
+# Fails
+list(A, B, C)
+```
+### Create a tibble
+#### 1. Single column, outside of function
+```{r}
+col_names = quo(A) %>% 
+  quo_name()
+
+tibble(!! col_names := rnorm(num_rows))
+```
+#### 2. Multiple columns 
+Use map and quo_name
+```{r}
+col_names = quos(A, B, C, D) %>% 
+  map(function(expr) quo_name(expr))
+
+col_names %>% 
+  map(function(col_name) tibble(!! col_name := rnorm(4))) %>% 
+  bind_cols()
+```
+#### 2. Multiple columns without quo_name
+```{r}
+quos(A, B, C) %>% 
+  map(function(col_name) tibble(!! col_name := rnorm(3))) %>% 
+  bind_cols()
+```
+#### 4. In a function using ...
+```{r}
+create_tibble1 = function(col_names_f, num_rows_f = 100, ...){
+  col_names_f = enquos(col_names_f, ...) %>% 
+    map(function(expr) quo_name(expr))
+  
+  col_names_f %>%
+    map(function(col_name) tibble(!! col_name := rnorm(num_rows_f))) %>% 
+    bind_cols()
+}
+
+create_tibble1(col_names_f = B, C, D, E, num_rows_f = 6)
+```
+#### 5. In a function not using ...
+```{r}
+create_tibble2 = function(col_names_f, num_rows_f = 100){
+  col_names_f = col_names_f %>% 
+    map(function(expr) quo_name(expr))
+  
+  col_names_f %>%
+    map(function(col_name) tibble(!! col_name := rnorm(num_rows_f))) %>% 
+    bind_cols()
+}
+
+create_tibble2(col_names_f = quos(B, C, D, E), num_rows_f = 10)
+```
+
+
