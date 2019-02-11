@@ -1,5 +1,14 @@
 # Tidy eval and dplyr/tidyverse examples
 #### A growing gallery of tidy NSE
+#### Because of scoping, this will also include the dplyr "<operation>_at" functions
+
+## Helpful links
+The 2 iterations of Hadley's advanced R
+http://adv-r.had.co.nz/
+https://adv-r.hadley.nz/
+
+The programming dplyr article
+https://dplyr.tidyverse.org/articles/programming.html
 ```{r boilerplate}
 library(tidyverse)
 ```
@@ -12,12 +21,14 @@ quos(B, C, D) %>%
 list(quo(A), quo(B), quo(C)) %>% 
   class()
 
-# Fails
-list(A, B, C)
+## Fails
+# list(A, B, C)
 ```
 ### Create a tibble
 #### 1. Single column, outside of function
 ```{r}
+num_rows = 8
+
 col_names = quo(A) %>% 
   quo_name()
 
@@ -66,4 +77,11 @@ create_tibble2 = function(col_names_f, num_rows_f = 100){
 create_tibble2(col_names_f = quos(B, C, D, E), num_rows_f = 10)
 ```
 
+### Group_by_at
+```{r}
+tibble(col1 = c("A", "B", "C") %>% 
+         sample(size = 100, replace = TRUE)) %>% 
+  group_by_at(names(.)) %>% 
+  summarise(n = n())
+```
 
