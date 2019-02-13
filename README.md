@@ -14,4 +14,4 @@ Combination of parApply and dplyr functions
 
 ### Tidy eval gallery
 A growing collection of NSE examples
-https://github.com/dbolta/R_functions/blob/master/Tidy_eval_examples_1.Rmd
+<br>https://github.com/dbolta/R_functions/blob/master/Tidy_eval_examples_1.Rmd
