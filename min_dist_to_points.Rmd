@@ -1,20 +1,26 @@
+---
+output: github_document
+---
 # Fast min distance calculator
 
 Calculate the min distance between a point and another set of points quickly.
 
 Original use case:
-Had 1e6 points in grid.
-Needed min distance for evry point on grid out to set of data collection points.
+<br>Had 1e6 points in grid.
+<br>Needed min distance for evry point on grid out to set of data collection points.
 
 Result below performed fastest.
-Other tests included
-1. Straight dplyr without multiprocessing
-2. Multidplyr, created memory issues
-3. Converting to matrix and using matrix operations
-4. Other flavors of lapply or purrr::map
-```{r}
+<br>Other tests included
+<br>1. Straight dplyr without multiprocessing
+<br>2. Multidplyr, created memory issues
+<br>3. Converting to matrix and using matrix operations
+<br>4. Other flavors of lapply or purrr::map
+```{r eval=FALSE}
+library(tidyverse)
+library(parallel)
+
 raster_df_list = raster_df %>%
-  split((seq(nrow(.))-1) %/% 1000)
+  split((seq(nrow(.)) - 1) %/% 1000)
 
 no_cores = detectCores()
 cl = makeCluster(no_cores)
