@@ -1,16 +1,21 @@
+---
+output: github_document
+always_allow_html: yes
+---
 # Tidy eval and dplyr/tidyverse examples
 #### A growing gallery of tidy NSE
 #### Because of scoping, this will also include the dplyr "<operation>_at" functions
 
 ## Helpful links
 The 2 iterations of Hadley's advanced R
-http://adv-r.had.co.nz/
-https://adv-r.hadley.nz/
+<br>http://adv-r.had.co.nz/
+<br>https://adv-r.hadley.nz/
 
 The programming dplyr article
-https://dplyr.tidyverse.org/articles/programming.html
+<br>https://dplyr.tidyverse.org/articles/programming.html
 ```{r boilerplate}
 library(tidyverse)
+library(ggvis)
 ```
 ### Compare multiple quosures
 ```{r Sample Data}
