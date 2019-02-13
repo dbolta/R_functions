@@ -2,7 +2,7 @@
 title: "Hello_World1"
 author: "bolta"
 date: "February 13, 2019"
-output: html_document
+output: github_document
 ---
 
 ```{r}
