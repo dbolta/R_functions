@@ -1,0 +1,535 @@
+---
+output: github_document
+---
+
+```{r boilerplate}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(keras)
+```
+
+```{r Run first time to setup keras, eval=FALSE}
+install_keras()
+```
+
+
+```{r setup data}
+### create data
+numrows = 1000
+set.seed(12345)
+data1 = tibble(x1 = rnorm(numrows),
+               x2 = rnorm(numrows),
+               x3 = rnorm(numrows),
+               y = x2 * sin(2 * x1) + x3)
+
+### separate train/test
+test_ind = sample(numrows, size = round(0.2 * numrows))
+
+train_df = data1 %>% slice(-test_ind)
+test_df = data1 %>% slice(test_ind)
+
+### Use tidymodels to center/scale
+recipe_obj = recipe(y ~ ., data = train_df) %>%
+  step_center(all_predictors())  %>%
+  step_scale(all_predictors()) %>%
+  prep(training = train_df)
+
+train_stand = bake(recipe_obj, new_data = train_df)
+test_stand = bake(recipe_obj, new_data = test_df)
+
+### Keras needs matrices
+train_X = train_stand %>% select(-y) %>% as.matrix()
+train_y = train_stand %>% select(y) %>% as.matrix()
+
+test_X = test_stand %>% select(-y) %>% as.matrix()
+test_y = test_stand %>% select(y) %>% as.matrix()
+```
+
+```{r Keras prep session}
+### Make sure session is clear
+K <- backend()
+K$clear_session()
+
+### Set seed in numpy and tensorflow
+use_session_with_seed(42)
+```
+
+## 1. sequential model
+```{r Sequential model example}
+### Build shallow and wide
+nnet_model = keras_model_sequential() %>%
+  layer_dense(units = 256, activation = NULL,
+              use_bias = FALSE,
+              kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              input_shape = dim(train_X)[2]) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 4, activation = 'relu',
+              use_bias = TRUE) %>%
+  layer_dense(units = 1)
+```
+
+```{r Compile}
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+
+nnet_model %>% summary()
+```
+
+```{r Options not requiring recompile, eval=FALSE}
+### Callback
+call_early_stop = callback_early_stopping(#monitor = "val_loss",
+  monitor = "loss",
+  min_delta = 0,
+  patience = 20, verbose = 0, mode = c("auto", "min", "max"),
+  baseline = NULL, restore_best_weights = FALSE)
+
+### Change learning rate
+k_set_value(nnet_model$optimizer$lr, 0.002)
+
+### Change optimizer
+nnet_model$optimizer = optimizer_nadam(#lr = 0.01
+)
+
+nnet_model$optimizer = optimizer_adam()
+nnet_model$optimizer = optimizer_adamax()
+nnet_model$optimizer = optimizer_sgd(
+  #lr = 0.0001,
+  momentum = 0.1)
+nnet_model$optimizer = optimizer_rmsprop()
+```
+
+```{r Train model}
+history = nnet_model %>% fit(
+  x = train_X,
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(test_X, test_y),
+  verbose = 0
+  #, callbacks = list(call_early_stop),
+  , view_metrics = FALSE ### can slow down Rstudio
+  , shuffle = TRUE
+)
+```
+
+```{r Save model, eval=FALSE}
+### Save model
+nnet_model %>%
+  save_model_hdf5(filepath = paste0(folder, subfolder, "keras_model_1.h5"),
+                  overwrite = TRUE,
+                  include_optimizer = TRUE)
+```
+
+```{r List out layer names}
+layers <- nnet_model$layers
+for (i in 1:length(layers)) cat(i, layers[[i]]$name, "\n")
+```
+
+## 2. Transfer learning by stacking layers deeper
+<br> 1. Remove layers at output end.
+<br> 2. Freeze remaining weights.
+<br> 3. Stack on new, trainable layers.
+```{r}
+### Remove 2 output-side layers
+for (i in 1:2) {
+  pop_layer(nnet_model)
+}
+
+### Sequentially stack new layers on
+nnet_model = nnet_model %>%
+  layer_dense(units = 8, activation = NULL,
+              use_bias = TRUE
+  ) %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 4, activation = 'relu',
+              use_bias = TRUE,
+              kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0)
+  ) %>%
+  layer_dense(units = 1)
+
+### Freeze or unfreeze desired weights
+# unfreeze_weights(nnet_model, 1, 29)
+freeze_weights(nnet_model, 1, 1)
+
+### Recompile model
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+
+nnet_model %>% summary()
+```
+
+```{r Train model}
+history = nnet_model %>% fit(
+  x = train_X,
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(test_X, test_y),
+  verbose = 0
+  #, callbacks = list(call_early_stop),
+  , view_metrics = FALSE ### can slow down Rstudio
+  , shuffle = TRUE
+)
+```
+
+```{r evaluate}
+test_y_pred = predict(nnet_model, x = test_X)
+
+paste0("Test RMSE = ",
+       RMSE(pred = test_y_pred,
+            obs = test_y))
+
+nnet_results = tibble(source = "train",
+                      pred = predict(nnet_model, x = train_X),
+                      obs = train_y) %>%
+  bind_rows(tibble(source = "test",
+                   pred = predict(nnet_model, x = test_X),
+                   obs = test_y))
+
+nnet_results %>%
+  ggplot(aes(x = obs,
+             y = pred,
+             color = source)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw() +
+  coord_cartesian(xlim = c(-3, 3),
+                  ylim = c(-3, 3)) +
+  ggtitle("Predicted vs. Actual, Stacked Deep") +
+  scale_color_brewer(palette = "Set1")
+```
+
+## 3. Stack models wide (in parallel)
+Reset to keras functional API
+```{r clear session}
+K <- backend()
+K$clear_session()
+use_session_with_seed(42)
+```
+
+Make sure to name the layers with weights.
+<br>These will be used later to determing which layers to freeze.
+```{r Setup first model with functional API}
+x_in1 = layer_input(shape = dim(train_X)[2])
+
+x1 = x_in1 %>%
+  layer_dense(units = 16, activation = NULL,
+              use_bias = FALSE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x1_1") %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 8, activation = NULL,
+              use_bias = FALSE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x1_2") %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 2, activation = NULL,
+              use_bias = TRUE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x1_3") %>%
+  layer_activation_relu()
+
+x_final = x1 %>%
+  layer_dense(units = 1)
+
+nnet_model = keras_model(inputs = c(x_in1), outputs = x_final)
+```
+
+```{r compile}
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+```
+
+num_stk is the number of models stacked beside each other
+```{r Train model}
+num_stk = 1
+
+history = nnet_model %>% fit(
+  x = map(1:num_stk, function(i) train_X),
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(map(1:num_stk, function(i) test_X), test_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+```
+
+Add on second parallel model
+<br>If we wanted to setup residual connections, layer_add() would be used instead of layer_concatenate()
+```{r}
+x_in2 = layer_input(shape = dim(train_X)[2])
+
+x2 = x_in2 %>%
+  layer_dense(units = 16, activation = NULL,
+              use_bias = FALSE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x2_1") %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 8, activation = NULL,
+              use_bias = FALSE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x2_2") %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.1) %>%
+  layer_dense(units = 2, activation = NULL,
+              use_bias = TRUE, kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              name = "x2_3") %>%
+  layer_activation_relu()
+
+### Use layer concatenate to merge layers
+x_final = layer_concatenate(c(x1, x2), axis = -1) %>%
+  layer_dense(units = 1)
+
+nnet_model = keras_model(inputs = c(x_in1, x_in2), outputs = x_final)
+
+freeze_weights(nnet_model, "x1_1", "x1_1")
+freeze_weights(nnet_model, "x1_2", "x1_2")
+freeze_weights(nnet_model, "x1_3", "x1_3")
+
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+```
+
+```{r Train model}
+num_stk = 2
+
+history = nnet_model %>% fit(
+  x = map(1:num_stk, function(i) train_X),
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(map(1:num_stk, function(i) test_X), test_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+```
+
+```{r evaluate}
+test_y_pred = predict(nnet_model, x = map(1:num_stk, function(i) test_X))
+
+paste0("Test RMSE = ",
+       RMSE(pred = test_y_pred,
+            obs = test_y))
+
+nnet_results = tibble(source = "train",
+                      pred = predict(nnet_model, x = map(1:num_stk, function(i) train_X)),
+                      obs = train_y) %>%
+  bind_rows(tibble(source = "test",
+                   pred = predict(nnet_model, x = map(1:num_stk, function(i) test_X)),
+                   obs = test_y))
+
+nnet_results %>%
+  ggplot(aes(x = obs,
+             y = pred,
+             color = source)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw() +
+  coord_cartesian(xlim = c(-3, 3),
+                  ylim = c(-3, 3)) +
+  ggtitle("Predicted vs. Actual, Nnet Layers Stacked Wide") +
+scale_color_brewer(palette = "Set1")
+```
+
+## 4. Custom loss function
+Suspect a certain relatinship (eg. y ~ x2)
+<br>With regression, can't know y exactly but can set custom loss function so that
+<br> if x2 is increased from initial training set, loss should be less sensitive
+<br>to predictions above initial y value
+```{r Keras prep session}
+K <- backend()
+K$clear_session()
+use_session_with_seed(42)
+```
+```{r custom loss functions}
+### Use the relu operator to ignore over- or underprediction
+less_wt_overpredict = function(y_obs, y_pred, alpha = 0.01) {
+  K <- backend()
+  K$mean(K$pow(alpha * K$relu(y_pred - y_obs) +
+                 K$relu(y_obs - y_pred), 2))
+}
+
+less_wt_underpredict = function(y_obs, y_pred, alpha = 0.01) {
+  K <- backend()
+  K$mean(K$pow(K$relu(y_pred - y_obs) +
+                 alpha * K$relu(y_obs - y_pred), 2))
+}
+```
+
+Change x2 up or down.
+<br>Don't know how much y should move, only know the direction it should change.
+<br>Use custom loss to handle. Can't just shift y up or down and use MSE loss.
+```{r Setup customized data}
+shift_factor = 1.1
+
+train_hi = train_stand %>%
+  mutate(x2 = shift_factor * x2)
+
+train_lo = train_stand %>%
+  mutate(x2 = x2 / shift_factor)
+
+train_hi_X = train_hi %>% select(-y) %>% as.matrix()
+train_hi_y = train_hi %>% select(y) %>% as.matrix()
+
+test_hi_X = train_hi %>% select(-y) %>% as.matrix()
+test_hi_y = train_hi %>% select(y) %>% as.matrix()
+
+train_lo_X = train_lo %>% select(-y) %>% as.matrix()
+train_lo_y = train_lo %>% select(y) %>% as.matrix()
+
+test_lo_X = train_lo %>% select(-y) %>% as.matrix()
+test_lo_y = train_lo %>% select(y) %>% as.matrix()
+```
+
+
+```{r setup sequential}
+nnet_model = keras_model_sequential() %>%
+  layer_dense(units = 32, activation = NULL,
+              use_bias = FALSE,
+              kernel_constraint = constraint_maxnorm(max_value = 5, axis = 0),
+              input_shape = dim(train_X)[2]) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.05) %>%
+  layer_dense(units = 16,
+              use_bias = FALSE,
+              kernel_constraint = constraint_maxnorm(max_value = 4, axis = 0)
+  ) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu(alpha = 0.05) %>%
+  layer_dense(units = 8,
+              use_bias = FALSE,
+              kernel_constraint = constraint_maxnorm(max_value = 3, axis = 0)
+  ) %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_activation_leaky_relu(alpha = 0.05) %>%
+  layer_dense(units = 4,
+              use_bias = FALSE,
+              kernel_constraint = constraint_maxnorm(max_value = 3, axis = 0)
+  ) %>%
+  layer_activation_leaky_relu(alpha = 0.05) %>%
+  layer_dense(units = 1)
+
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+```
+
+```{r Train on base train set first}
+history = nnet_model %>% fit(
+  x = train_X,
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(test_X, test_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+```
+
+Can encapsulate in a for loop as needed
+```{r Train for fewer epochs on perturbed data sets}
+### Recompile with new loss
+nnet_model %>% compile(
+  loss = less_wt_overpredict,
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+
+history = nnet_model %>% fit(
+  x = train_hi_X,
+  y = train_hi_y,
+  batch_size = 512,
+  epochs = 50,
+  validation_data = list(test_hi_X, test_hi_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+
+nnet_model %>% compile(
+  loss = less_wt_underpredict
+  , optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+
+history = nnet_model %>% fit(
+  x = train_lo_X,
+  y = train_lo_y,
+  batch_size = 4,
+  epochs = 50,
+  validation_data = list(test_lo_X, test_lo_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+```
+
+```{r End with final train on base data set}
+nnet_model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_nadam(),
+  metrics = list("mean_absolute_error")
+)
+
+history = nnet_model %>% fit(
+  x = train_X,
+  y = train_y,
+  batch_size = 512,
+  epochs = 350,
+  validation_data = list(test_X, test_y),
+  verbose = 0
+  , view_metrics = FALSE
+  , shuffle = TRUE
+)
+```
+
+```{r Evaluate}
+test_y_pred = predict(nnet_model, x = test_X)
+
+paste0("Test RMSE = ",
+       RMSE(pred = test_y_pred,
+            obs = test_y))
+
+nnet_results = tibble(source = "train",
+                      pred = predict(nnet_model, x = train_X),
+                      obs = train_y) %>%
+  bind_rows(tibble(source = "test",
+                   pred = predict(nnet_model, x = test_X),
+                   obs = test_y))
+
+nnet_results %>%
+  ggplot(aes(x = obs,
+             y = pred,
+             color = source)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw() +
+  coord_cartesian(xlim = c(-3, 3),
+                  ylim = c(-3, 3)) +
+  ggtitle("Predicted vs. Actual, Stacked Deep") +
+  scale_color_brewer(palette = "Set1")
+```
