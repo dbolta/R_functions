@@ -1,20 +1,71 @@
----
-output: github_document
----
 
-```{r boilerplate}
+``` r
 library(tidyverse)
+```
+
+    ## -- Attaching packages ------------------------------------------------------------------------------ tidyverse 1.2.1 --
+
+    ## v ggplot2 3.1.0     v purrr   0.2.5
+    ## v tibble  2.0.1     v dplyr   0.7.8
+    ## v tidyr   0.8.2     v stringr 1.3.1
+    ## v readr   1.3.1     v forcats 0.3.0
+
+    ## -- Conflicts --------------------------------------------------------------------------------- tidyverse_conflicts() --
+    ## x dplyr::filter() masks stats::filter()
+    ## x dplyr::lag()    masks stats::lag()
+
+``` r
 library(tidymodels)
+```
+
+    ## -- Attaching packages ----------------------------------------------------------------------------- tidymodels 0.0.2 --
+
+    ## v broom     0.5.1     v recipes   0.1.4
+    ## v dials     0.0.2     v rsample   0.0.4
+    ## v infer     0.4.0     v yardstick 0.0.2
+    ## v parsnip   0.0.1
+
+    ## -- Conflicts -------------------------------------------------------------------------------- tidymodels_conflicts() --
+    ## x scales::discard() masks purrr::discard()
+    ## x dplyr::filter()   masks stats::filter()
+    ## x recipes::fixed()  masks stringr::fixed()
+    ## x dplyr::lag()      masks stats::lag()
+    ## x yardstick::spec() masks readr::spec()
+    ## x recipes::step()   masks stats::step()
+
+``` r
 library(caret)
+```
+
+    ## Loading required package: lattice
+
+    ## 
+    ## Attaching package: 'caret'
+
+    ## The following objects are masked from 'package:yardstick':
+    ## 
+    ##     precision, recall
+
+    ## The following object is masked from 'package:purrr':
+    ## 
+    ##     lift
+
+``` r
 library(keras)
 ```
 
-```{r Run first time to setup keras, eval=FALSE}
+    ## 
+    ## Attaching package: 'keras'
+
+    ## The following object is masked from 'package:yardstick':
+    ## 
+    ##     get_weights
+
+``` r
 install_keras()
 ```
 
-
-```{r setup data}
+``` r
 ### create data
 numrows = 1000
 set.seed(12345)
@@ -46,7 +97,7 @@ test_X = test_stand %>% select(-y) %>% as.matrix()
 test_y = test_stand %>% select(y) %>% as.matrix()
 ```
 
-```{r Keras prep session}
+``` r
 ### Make sure session is clear
 K <- backend()
 K$clear_session()
@@ -55,8 +106,12 @@ K$clear_session()
 use_session_with_seed(42)
 ```
 
-## 1. sequential model
-```{r Sequential model example}
+    ## Set session seed to 42 (disabled GPU, CPU parallelism)
+
+1. sequential model
+-------------------
+
+``` r
 ### Build shallow and wide
 nnet_model = keras_model_sequential() %>%
   layer_dense(units = 256, activation = NULL,
@@ -70,7 +125,7 @@ nnet_model = keras_model_sequential() %>%
   layer_dense(units = 1)
 ```
 
-```{r Compile 1}
+``` r
 nnet_model %>% compile(
   loss = "mse",
   optimizer = optimizer_nadam(),
@@ -80,7 +135,25 @@ nnet_model %>% compile(
 nnet_model %>% summary()
 ```
 
-```{r Options not requiring recompile, eval=FALSE}
+    ## ___________________________________________________________________________
+    ## Layer (type)                     Output Shape                  Param #     
+    ## ===========================================================================
+    ## dense_1 (Dense)                  (None, 256)                   768         
+    ## ___________________________________________________________________________
+    ## batch_normalization_1 (BatchNorm (None, 256)                   1024        
+    ## ___________________________________________________________________________
+    ## leaky_re_lu_1 (LeakyReLU)        (None, 256)                   0           
+    ## ___________________________________________________________________________
+    ## dense_2 (Dense)                  (None, 4)                     1028        
+    ## ___________________________________________________________________________
+    ## dense_3 (Dense)                  (None, 1)                     5           
+    ## ===========================================================================
+    ## Total params: 2,825
+    ## Trainable params: 2,313
+    ## Non-trainable params: 512
+    ## ___________________________________________________________________________
+
+``` r
 ### Callback
 call_early_stop = callback_early_stopping(#monitor = "val_loss",
   monitor = "loss",
@@ -103,7 +176,7 @@ nnet_model$optimizer = optimizer_sgd(
 nnet_model$optimizer = optimizer_rmsprop()
 ```
 
-```{r Train model 1}
+``` r
 history = nnet_model %>% fit(
   x = train_X,
   y = train_y,
@@ -117,7 +190,7 @@ history = nnet_model %>% fit(
 )
 ```
 
-```{r Save model, eval=FALSE}
+``` r
 ### Save model
 nnet_model %>%
   save_model_hdf5(filepath = paste0(folder, subfolder, "keras_model_1.h5"),
@@ -125,16 +198,23 @@ nnet_model %>%
                   include_optimizer = TRUE)
 ```
 
-```{r List out layer names}
+``` r
 layers <- nnet_model$layers
 for (i in 1:length(layers)) cat(i, layers[[i]]$name, "\n")
 ```
 
-## 2. Transfer learning by stacking layers deeper
-<br> 1. Remove layers at output end.
-<br> 2. Freeze remaining weights.
-<br> 3. Stack on new, trainable layers.
-```{r}
+    ## 1 dense_1 
+    ## 2 batch_normalization_1 
+    ## 3 leaky_re_lu_1 
+    ## 4 dense_2 
+    ## 5 dense_3
+
+2. Transfer learning by stacking layers deeper
+----------------------------------------------
+
+<br> 1. Remove layers at output end. <br> 2. Freeze remaining weights. <br> 3. Stack on new, trainable layers.
+
+``` r
 ### Remove 2 output-side layers
 for (i in 1:2) {
   pop_layer(nnet_model)
@@ -166,7 +246,29 @@ nnet_model %>% compile(
 nnet_model %>% summary()
 ```
 
-```{r Train model 2}
+    ## ___________________________________________________________________________
+    ## Layer (type)                     Output Shape                  Param #     
+    ## ===========================================================================
+    ## dense_1 (Dense)                  (None, 256)                   768         
+    ## ___________________________________________________________________________
+    ## batch_normalization_1 (BatchNorm (None, 256)                   1024        
+    ## ___________________________________________________________________________
+    ## leaky_re_lu_1 (LeakyReLU)        (None, 256)                   0           
+    ## ___________________________________________________________________________
+    ## dense_4 (Dense)                  (None, 8)                     2056        
+    ## ___________________________________________________________________________
+    ## leaky_re_lu_2 (LeakyReLU)        (None, 8)                     0           
+    ## ___________________________________________________________________________
+    ## dense_5 (Dense)                  (None, 4)                     36          
+    ## ___________________________________________________________________________
+    ## dense_6 (Dense)                  (None, 1)                     5           
+    ## ===========================================================================
+    ## Total params: 3,889
+    ## Trainable params: 2,609
+    ## Non-trainable params: 1,280
+    ## ___________________________________________________________________________
+
+``` r
 history = nnet_model %>% fit(
   x = train_X,
   y = train_y,
@@ -180,13 +282,17 @@ history = nnet_model %>% fit(
 )
 ```
 
-```{r evaluate 2}
+``` r
 test_y_pred = predict(nnet_model, x = test_X)
 
 paste0("Test RMSE = ",
        RMSE(pred = test_y_pred,
             obs = test_y))
+```
 
+    ## [1] "Test RMSE = 0.410183348885608"
+
+``` r
 nnet_results = tibble(source = "train",
                       pred = predict(nnet_model, x = train_X),
                       obs = train_y) %>%
@@ -207,17 +313,24 @@ nnet_results %>%
   scale_color_brewer(palette = "Set1")
 ```
 
-## 3. Stack models wide (in parallel)
+![](keras_examples1_files/figure-markdown_github/evaluate%202-1.png)
+
+3. Stack models wide (in parallel)
+----------------------------------
+
 Reset to keras functional API
-```{r clear session}
+
+``` r
 K <- backend()
 K$clear_session()
 use_session_with_seed(42)
 ```
 
-Make sure to name the layers with weights.
-<br>These will be used later to determing which layers to freeze.
-```{r Setup first model with functional API}
+    ## Set session seed to 42 (disabled GPU, CPU parallelism)
+
+Make sure to name the layers with weights. <br>These will be used later to determing which layers to freeze.
+
+``` r
 x_in1 = layer_input(shape = dim(train_X)[2])
 
 x1 = x_in1 %>%
@@ -244,7 +357,7 @@ x_final = x1 %>%
 nnet_model = keras_model(inputs = c(x_in1), outputs = x_final)
 ```
 
-```{r compile3}
+``` r
 nnet_model %>% compile(
   loss = "mse",
   optimizer = optimizer_nadam(),
@@ -252,8 +365,9 @@ nnet_model %>% compile(
 )
 ```
 
-num_stk is the number of models stacked beside each other
-```{r Train model 3}
+num\_stk is the number of models stacked beside each other
+
+``` r
 num_stk = 1
 
 history = nnet_model %>% fit(
@@ -268,9 +382,9 @@ history = nnet_model %>% fit(
 )
 ```
 
-Add on second parallel model
-<br>If we wanted to setup residual connections, layer_add() would be used instead of layer_concatenate()
-```{r}
+Add on second parallel model <br>If we wanted to setup residual connections, layer\_add() would be used instead of layer\_concatenate()
+
+``` r
 x_in2 = layer_input(shape = dim(train_X)[2])
 
 x2 = x_in2 %>%
@@ -308,7 +422,7 @@ nnet_model %>% compile(
 )
 ```
 
-```{r Train model 4}
+``` r
 num_stk = 2
 
 history = nnet_model %>% fit(
@@ -323,13 +437,17 @@ history = nnet_model %>% fit(
 )
 ```
 
-```{r evaluate 4}
+``` r
 test_y_pred = predict(nnet_model, x = map(1:num_stk, function(i) test_X))
 
 paste0("Test RMSE = ",
        RMSE(pred = test_y_pred,
             obs = test_y))
+```
 
+    ## [1] "Test RMSE = 0.409881542114744"
+
+``` r
 nnet_results = tibble(source = "train",
                       pred = predict(nnet_model, x = map(1:num_stk, function(i) train_X)),
                       obs = train_y) %>%
@@ -350,17 +468,22 @@ nnet_results %>%
 scale_color_brewer(palette = "Set1")
 ```
 
-## 4. Custom loss function
-Suspect a certain relatinship (eg. y ~ x2)
-<br>With regression, can't know y exactly but can set custom loss function so that
-<br> if x2 is increased from initial training set, loss should be less sensitive
-<br>to predictions above initial y value
-```{r Keras set session}
+![](keras_examples1_files/figure-markdown_github/evaluate%204-1.png)
+
+4. Custom loss function
+-----------------------
+
+Suspect a certain relatinship (eg. y ~ x2) <br>With regression, can't know y exactly but can set custom loss function so that <br> if x2 is increased from initial training set, loss should be less sensitive <br>to predictions above initial y value
+
+``` r
 K <- backend()
 K$clear_session()
 use_session_with_seed(42)
 ```
-```{r custom loss functions}
+
+    ## Set session seed to 42 (disabled GPU, CPU parallelism)
+
+``` r
 ### Use the relu operator to ignore over- or underprediction
 less_wt_overpredict = function(y_obs, y_pred, alpha = 0.01) {
   K <- backend()
@@ -375,10 +498,9 @@ less_wt_underpredict = function(y_obs, y_pred, alpha = 0.01) {
 }
 ```
 
-Change x2 up or down.
-<br>Don't know how much y should move, only know the direction it should change.
-<br>Use custom loss to handle. Can't just shift y up or down and use MSE loss.
-```{r Setup customized data}
+Change x2 up or down. <br>Don't know how much y should move, only know the direction it should change. <br>Use custom loss to handle. Can't just shift y up or down and use MSE loss.
+
+``` r
 shift_factor = 1.1
 
 train_hi = train_stand %>%
@@ -400,8 +522,7 @@ test_lo_X = train_lo %>% select(-y) %>% as.matrix()
 test_lo_y = train_lo %>% select(y) %>% as.matrix()
 ```
 
-
-```{r setup sequential}
+``` r
 nnet_model = keras_model_sequential() %>%
   layer_dense(units = 32, activation = NULL,
               use_bias = FALSE,
@@ -437,7 +558,7 @@ nnet_model %>% compile(
 )
 ```
 
-```{r Train on base train set first}
+``` r
 history = nnet_model %>% fit(
   x = train_X,
   y = train_y,
@@ -451,7 +572,8 @@ history = nnet_model %>% fit(
 ```
 
 Can encapsulate in a for loop as needed
-```{r Train for fewer epochs on perturbed data sets}
+
+``` r
 ### Recompile with new loss
 nnet_model %>% compile(
   loss = less_wt_overpredict,
@@ -488,7 +610,7 @@ history = nnet_model %>% fit(
 )
 ```
 
-```{r End with final train on base data set}
+``` r
 nnet_model %>% compile(
   loss = "mse",
   optimizer = optimizer_nadam(),
@@ -507,13 +629,17 @@ history = nnet_model %>% fit(
 )
 ```
 
-```{r Evaluate 4}
+``` r
 test_y_pred = predict(nnet_model, x = test_X)
 
 paste0("Test RMSE = ",
        RMSE(pred = test_y_pred,
             obs = test_y))
+```
 
+    ## [1] "Test RMSE = 0.476383114752941"
+
+``` r
 nnet_results = tibble(source = "train",
                       pred = predict(nnet_model, x = train_X),
                       obs = train_y) %>%
@@ -533,3 +659,5 @@ nnet_results %>%
   ggtitle("Predicted vs. Actual, Stacked Deep") +
   scale_color_brewer(palette = "Set1")
 ```
+
+![](keras_examples1_files/figure-markdown_github/Evaluate%204-1.png)
