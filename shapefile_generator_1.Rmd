@@ -1,0 +1,72 @@
+
+
+
+```{r}
+working_folder = paste0(getwd(), "/")
+
+```
+
+```{r microservice source}
+udf_source = function(path, data_subfolder = "microservices/"){
+  path = as.character(substitute(expr = path))
+  source(paste0(working_folder, data_subfolder, path, ".R"))
+}
+
+udf_source(install_load)
+udf_source(install_load_initial_libraries)
+udf_source(raster2contourPolys)
+udf_source(udf_read_write_functions)
+```
+
+```{r import data}
+source_data_to_map = udf_fread_csv(source_data_to_map)
+config_table = udf_fread_csv(config_table)
+source_data_to_map
+config_table
+```
+
+```{r grids and raster}
+interpolated_grid = interp(x = source_data_to_map$longitude,
+                         y = source_data_to_map$latitude,
+                         z = source_data_to_map$value,
+                         duplicate = "mean",
+                         nx = config_table$value[which(config_table$attribute == "grid_steps_x")] %>% 
+                           as.integer(),
+                         ny = config_table$value[which(config_table$attribute == "grid_steps_y")] %>% 
+                           as.integer())
+
+interpolated_grid_tall = expand.grid(interpolated_grid$x, interpolated_grid$y) %>% 
+  mutate(lon = Var1,
+         lat = Var2)
+interpolated_grid_tall$z = c(interpolated_grid$z)
+
+### Generate raster
+result_raster = interpolated_grid_tall %>%
+  select(lon, lat, z) %>% 
+  rasterFromXYZ()
+
+plot(result_raster)
+proj4string(result_raster) = CRS("+init=epsg:4267")
+```
+
+
+```{r shapefile}
+contour_levels = config_table$value[which(config_table$attribute == "contour_levels")] %>% 
+  paste0("c(", ., ")") %>% 
+  rlang::parse_expr() %>% 
+  rlang::eval_bare()
+
+output_shp = raster2contourPolys(result_raster, 
+                                 levels = contour_levels,
+                                 fd = 10^as.numeric(config_table$value[which(config_table$attribute == "fairy_dust")]))
+
+rgdal::writeOGR(output_shp, 
+                dsn = paste0(working_folder, "output_shp.shp"), 
+                "output_shp",
+                driver = 'ESRI Shapefile', 
+                overwrite = TRUE)
+
+```
+
+
+
