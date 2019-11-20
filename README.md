@@ -13,6 +13,11 @@ Use ranger to impute columns of train then broadcast without memory leak into te
 Combination of parApply and dplyr functions
 <br>https://github.com/dbolta/R_functions/blob/master/min_dist_to_points.Rmd
 
+### Shapefile generator
+Given a map control points, generate contour polygons for mapping in spotfire. 
+<br>https://github.com/dbolta/R_functions/blob/master/Tidy_eval_examples_1.Rmd
+
+
 ### Tidy eval gallery
 A growing collection of NSE examples
 <br>https://github.com/dbolta/R_functions/blob/master/Tidy_eval_examples_1.Rmd
